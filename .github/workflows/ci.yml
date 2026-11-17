@@ -1,0 +1,64 @@
+
+name: Legacy Logic Rescue CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sql-ci:
+    name: SQL Regression CI
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_user
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: legacy_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_user -d legacy_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGDATABASE: legacy_ci
+      PGUSER: ci_user
+      PGPASSWORD: ci_password
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install test dependencies
+        run: python -m pip install "psycopg[binary]" pytest
+
+      - name: Verify PostgreSQL
+        run: |
+          python - <<'PY'
+          import psycopg
+
+          with psycopg.connect() as conn:
+              with conn.cursor() as cur:
+                  cur.execute("SELECT 1")
+                  assert cur.fetchone() == (1,)
+
+          print("PostgreSQL connection successful")
+          PY
