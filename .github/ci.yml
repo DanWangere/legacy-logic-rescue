@@ -1,0 +1,92 @@
+name: Legacy Logic Rescue CI
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  legacy-sql-tests:
+    name: PostgreSQL Regression Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17
+
+        env:
+          POSTGRES_USER: llr
+          POSTGRES_PASSWORD: llr_ci_password
+          POSTGRES_DB: llr_ci
+
+        ports:
+          - 5432:5432
+
+        options: >-
+          --health-cmd "pg_isready -U llr -d llr_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGPASSWORD: llr_ci_password
+      DATABASE_URL: postgresql://llr:llr_ci_password@127.0.0.1:5432/llr_ci
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Initialize synthetic legacy database
+        run: |
+          for file in \
+            sql/01_create_schema.sql \
+            sql/ci/01_seed_fixture.sql \
+            sql/02_legacy_monthly_sales.sql \
+            sql/03_legacy_bug01.sql \
+            sql/benchmark_v2/01_item_group_mapping.sql \
+            sql/benchmark_v2/02_monthly_sales_reference.sql \
+            sql/benchmark_v2/03_monthly_sales_candidate.sql
+          do
+            echo "Applying $file"
+            psql \
+              -h 127.0.0.1 \
+              -U llr \
+              -d llr_ci \
+              -v ON_ERROR_STOP=1 \
+              -f "$file"
+          done
+
+      - name: Check Python syntax
+        run: |
+          python -m compileall -q scripts tests
+
+      - name: Run migration regression tests
+        run: |
+          python -m pytest tests/ -v
