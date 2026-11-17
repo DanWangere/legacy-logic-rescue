@@ -1,0 +1,21 @@
+pipeline_events
+| summarize
+    total_events = count(),
+    successful_events = countif(status == "SUCCEEDED"),
+    failed_events = countif(status == "FAILED"),
+    average_duration_ms = avg(duration_ms)
+    by pipeline_name
+| order by total_events desc
+
+
+pipeline_events
+| count
+
+
+pipeline_events
+| summarize
+    total_events = count(),
+    failures = countif(status == "FAILED")
+    by time_bucket = bin(todatetime(event_time), 1m)
+| order by time_bucket asc
+
